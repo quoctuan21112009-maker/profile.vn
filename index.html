@@ -1,0 +1,148 @@
+<!-- Sound DNS - Music Video UI with Login + YouTube Data API Integration
+Theme: Green/Black (Spotify-style)
+Features:
+- User login (mock client-side authentication)
+- Fetch YouTube videos dynamically using YouTube Data API v3
+- Responsive grid video layout, modal video player
+- LocalStorage token persistence
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sound DNS — Music & Videos</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f12; --card:#071014; --muted:#9aa7ad; --accent:#1DB954; --radius:14px;
+    }
+    body {margin:0;font-family:Poppins,system-ui;background:linear-gradient(180deg,#050608 0%,#071117 100%);color:#eaf6ee;}
+    header{height:72px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid rgba(255,255,255,0.03);}
+    .logo{display:flex;align-items:center;gap:10px;font-weight:700}
+    .mark{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#06b6d4);display:flex;align-items:center;justify-content:center;color:#002b1f;font-weight:700}
+    .search input{padding:10px 14px;border-radius:12px;border:none;background:var(--card);color:white;width:240px;}
+    .layout{display:grid;grid-template-columns:240px 1fr;gap:20px;padding:24px;}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}}
+    .sidebar{background:var(--card);padding:18px;border-radius:var(--radius);height:calc(100vh - 160px);overflow:auto;}
+    .playlist a{display:block;padding:8px 10px;border-radius:8px;color:var(--muted);}
+    .playlist a.active{background:rgba(29,185,84,0.15);color:var(--accent)}
+    .main{min-height:70vh;}
+    .grid-videos{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
+    .card{background:rgba(255,255,255,0.03);border-radius:12px;padding:10px;}
+    .thumb img{width:100%;border-radius:10px;}
+    .meta{margin-top:8px;}
+    .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);}
+    .modal.open{display:flex;}
+    .player{width:min(900px,95vw);background:#000;border-radius:12px;padding:10px;}
+    .login-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:100;}
+    .login-box{background:var(--card);padding:30px;border-radius:14px;width:320px;text-align:center;}
+    .login-box input{width:100%;padding:10px;border:none;border-radius:10px;margin:10px 0;background:#111;color:white;}
+    .login-box button{width:100%;padding:10px;background:var(--accent);border:none;border-radius:10px;font-weight:600;cursor:pointer;}
+  </style>
+</head>
+<body>
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-box">
+      <h2>Login to Sound DNS</h2>
+      <input id="username" placeholder="Username" />
+      <input id="password" type="password" placeholder="Password" />
+      <button id="loginBtn">Login</button>
+      <p id="loginMsg" style="color:var(--muted);font-size:13px;margin-top:6px"></p>
+    </div>
+  </div>
+
+  <header>
+    <div class="logo"><div class="mark">SD</div> Sound DNS</div>
+    <div class="search"><input id="searchInput" placeholder="Search YouTube..." /></div>
+    <button id="logoutBtn" style="background:var(--accent);border:none;padding:8px 14px;border-radius:10px;color:#000;font-weight:600;cursor:pointer">Logout</button>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="playlist">
+        <a class="active">Trending</a>
+        <a>Top 100</a>
+        <a>Chill Vibes</a>
+      </div>
+    </aside>
+    <main class="main">
+      <h3>Trending YouTube Videos</h3>
+      <div class="grid-videos" id="videoGrid"></div>
+    </main>
+  </div>
+
+  <div class="modal" id="modal"><div class="player"><button id="closeBtn">✕</button><div id="playerWrap"></div></div></div>
+
+<script>
+  const API_KEY = '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'; // Replace with your key
+  const videoGrid = document.getElementById('videoGrid');
+  const modal = document.getElementById('modal');
+  const playerWrap = document.getElementById('playerWrap');
+  const closeBtn = document.getElementById('closeBtn');
+
+  // Login logic
+  const overlay = document.getElementById('loginOverlay');
+  const loginBtn = document.getElementById('loginBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const msg = document.getElementById('loginMsg');
+
+  function checkLogin() {
+    const user = localStorage.getItem('soundDNS_user');
+    if(user){overlay.style.display='none';}
+  }
+
+  loginBtn.onclick = () => {
+    const u = document.getElementById('username').value.trim();
+    const p = document.getElementById('password').value.trim();
+    if(u && p){
+      localStorage.setItem('soundDNS_user', u);
+      overlay.style.display='none';
+      loadTrending();
+    } else {
+      msg.textContent = 'Please enter both fields';
+    }
+  };
+
+  logoutBtn.onclick = ()=>{localStorage.removeItem('soundDNS_user');location.reload();};
+
+  async function loadTrending() {
+    try{
+      const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&regionCode=US&maxResults=8&key=${API_KEY}`);
+      const data = await res.json();
+      renderGrid(data.items.map(i => ({id:i.id,title:i.snippet.title,artist:i.snippet.channelTitle})));
+    }catch(e){
+      console.error(e);
+      videoGrid.innerHTML = '<p>Failed to fetch videos. Check API key or quota.</p>';
+    }
+  }
+
+  function renderGrid(videos){
+    videoGrid.innerHTML='';
+    videos.forEach(v=>{
+      const card=document.createElement('div');card.className='card';
+      card.innerHTML=`<div class='thumb'><img src='https://img.youtube.com/vi/${v.id}/hqdefault.jpg'></div><div class='meta'><div>${v.title}</div><div style='color:var(--muted);font-size:13px'>${v.artist}</div></div>`;
+      card.onclick=()=>openPlayer(v.id);
+      videoGrid.appendChild(card);
+    });
+  }
+
+  function openPlayer(id){
+    modal.classList.add('open');
+    playerWrap.innerHTML=`<iframe width='100%' height='500' src='https://www.youtube.com/embed/${id}?autoplay=1' allow='autoplay;encrypted-media' allowfullscreen></iframe>`;
+  }
+  closeBtn.onclick=()=>{modal.classList.remove('open');playerWrap.innerHTML='';};
+
+  document.getElementById('searchInput').addEventListener('change', async e=>{
+    const q=e.target.value.trim();if(!q)return loadTrending();
+    const res=await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(q)}&maxResults=8&key=${API_KEY}`);
+    const data=await res.json();
+    renderGrid(data.items.map(i=>({id:i.id.videoId,title:i.snippet.title,artist:i.snippet.channelTitle})));
+  });
+
+  checkLogin();
+  if(localStorage.getItem('soundDNS_user')) loadTrending();
+</script>
+</body>
+</html>
